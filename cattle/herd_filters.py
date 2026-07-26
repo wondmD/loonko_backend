@@ -1,6 +1,9 @@
 """Herd list filters: calf / heifer / cow + reproductive status chips."""
 
+from __future__ import annotations
+
 from datetime import timedelta
+from typing import Optional
 
 from django.db.models import Exists, OuterRef, Q, Subquery
 from django.utils import timezone
@@ -54,7 +57,7 @@ def annotate_herd_flags(queryset):
     )
 
 
-def apply_category_filter(queryset, category: str | None):
+def apply_category_filter(queryset, category: Optional[str]):
     """Filter by CALF | HEIFER | COW (female dairy classes)."""
     if not category or category.upper() in ('ALL', ''):
         return queryset
@@ -80,7 +83,7 @@ def apply_category_filter(queryset, category: str | None):
     return queryset
 
 
-def apply_herd_filter(queryset, herd_filter: str | None):
+def apply_herd_filter(queryset, herd_filter: Optional[str]):
     """
     Secondary chips:
     pregnant, close_calving, close_dry_off, open, fresh,

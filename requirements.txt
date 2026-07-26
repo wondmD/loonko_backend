@@ -1,10 +1,12 @@
-Django>=6.0,<7
-djangorestframework>=3.15
-djangorestframework-simplejwt>=5.3
-django-cors-headers>=4.3
-django-filter>=24.0
-python-dotenv>=1.0
-Pillow>=10.0
-psycopg[binary]>=3.1
-pytest>=8.0
-pytest-django>=4.8
+# Python 3.8+ (cPanel). Django 6 needs 3.12+ — use 4.2 LTS on shared hosting.
+Django>=4.2,<5
+djangorestframework>=3.14,<3.16
+djangorestframework-simplejwt>=5.3,<6
+django-cors-headers>=4.3,<5
+django-filter>=23.5,<25
+python-dotenv>=1.0,<2
+Pillow>=10.0,<11
+# Prefer psycopg2 on older cPanel Python builds; psycopg3 also works if available
+psycopg2-binary>=2.9.9,<3
+pytest>=7.4,<8
+pytest-django>=4.5,<5
