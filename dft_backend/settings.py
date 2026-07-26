@@ -17,13 +17,15 @@ ALLOWED_HOSTS = [
     h.strip()
     for h in os.getenv(
         'ALLOWED_HOSTS',
-        'localhost,127.0.0.1,testserver,loonko-api2.ethioace.com',
-        'www.loonko-api2.ethioace.com',
+        'localhost,127.0.0.1,testserver,loonko-api2.ethioace.com,www.loonko-api2.ethioace.com',
     ).split(',')
     if h.strip()
 ]
-# Always allow the production API host even if ALLOWED_HOSTS was set without it
-_PRODUCTION_HOSTS = ('loonko-api2.ethioace.com',)
+# Always allow the production API hosts even if ALLOWED_HOSTS was set without them
+_PRODUCTION_HOSTS = (
+    'loonko-api2.ethioace.com',
+    'www.loonko-api2.ethioace.com',
+)
 for _host in _PRODUCTION_HOSTS:
     if _host not in ALLOWED_HOSTS:
         ALLOWED_HOSTS.append(_host)
@@ -34,14 +36,17 @@ CSRF_TRUSTED_ORIGINS = [
     o.strip()
     for o in os.getenv(
         'CSRF_TRUSTED_ORIGINS',
-        'https://loonko-api2.ethioace.com,https://loonko.vercel.app,http://localhost:3000,http://127.0.0.1:3000',
+        'https://loonko-api2.ethioace.com,https://www.loonko-api2.ethioace.com,'
+        'https://loonko.vercel.app,https://www.loonko.vercel.app,'
+        'http://localhost:3000,http://127.0.0.1:3000',
     ).split(',')
     if o.strip()
 ]
 _PRODUCTION_CSRF = (
     'https://loonko-api2.ethioace.com',
+    'https://www.loonko-api2.ethioace.com',
     'https://loonko.vercel.app',
-    'www.loonko.vercel.app',
+    'https://www.loonko.vercel.app',
 )
 for _origin in _PRODUCTION_CSRF:
     if _origin not in CSRF_TRUSTED_ORIGINS:
@@ -143,11 +148,15 @@ USE_I18N = True
 USE_TZ = True
 
 
-STATIC_URL = "/static/"
-STATIC_ROOT = Path("/home/ethioadv/loonko-api2.ethioace.com/static")
+STATIC_URL = '/static/'
+STATIC_ROOT = Path(
+    os.getenv('STATIC_ROOT', str(BASE_DIR / 'staticfiles'))
+)
 
-MEDIA_URL = "/media/"
-MEDIA_ROOT = Path("/home/ethioadv/loonko-api2.ethioace.com/media")
+MEDIA_URL = '/media/'
+MEDIA_ROOT = Path(
+    os.getenv('MEDIA_ROOT', str(BASE_DIR / 'media'))
+)
 
 
 
@@ -162,7 +171,10 @@ CORS_ALLOWED_ORIGINS = [
     ).split(',')
     if o.strip()
 ]
-_PRODUCTION_CORS = ('https://loonko.vercel.app',)
+_PRODUCTION_CORS = (
+    'https://loonko.vercel.app',
+    'https://www.loonko.vercel.app',
+)
 for _origin in _PRODUCTION_CORS:
     if _origin not in CORS_ALLOWED_ORIGINS:
         CORS_ALLOWED_ORIGINS.append(_origin)
