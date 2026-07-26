@@ -33,11 +33,17 @@ CSRF_TRUSTED_ORIGINS = [
     o.strip()
     for o in os.getenv(
         'CSRF_TRUSTED_ORIGINS',
-        'https://loonko-api2.ethioace.com,http://localhost:3000,http://127.0.0.1:3000',
-        'https://loonko.vercel.app'
+        'https://loonko-api2.ethioace.com,https://loonko.vercel.app,http://localhost:3000,http://127.0.0.1:3000',
     ).split(',')
     if o.strip()
 ]
+_PRODUCTION_CSRF = (
+    'https://loonko-api2.ethioace.com',
+    'https://loonko.vercel.app',
+)
+for _origin in _PRODUCTION_CSRF:
+    if _origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(_origin)
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -133,9 +139,15 @@ LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'Africa/Addis_Ababa'
 USE_I18N = True
 USE_TZ = True
-STATIC_URL = 'static/'
-MEDIA_URL = 'media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+
+
+STATIC_URL = "/static/"
+STATIC_ROOT = Path("/home/ethioadv/loonko-api2.ethioace.com/static")
+
+MEDIA_URL = "/media/"
+MEDIA_ROOT = Path("/home/ethioadv/loonko-api2.ethioace.com/media")
+
+
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'accounts.User'
@@ -144,10 +156,16 @@ CORS_ALLOWED_ORIGINS = [
     o.strip()
     for o in os.getenv(
         'CORS_ALLOWED_ORIGINS',
-        'http://localhost:3000,http://127.0.0.1:3000',
+        'http://localhost:3000,http://127.0.0.1:3000,https://loonko.vercel.app',
     ).split(',')
     if o.strip()
 ]
+_PRODUCTION_CORS = ('https://loonko.vercel.app',)
+for _origin in _PRODUCTION_CORS:
+    if _origin not in CORS_ALLOWED_ORIGINS:
+        CORS_ALLOWED_ORIGINS.append(_origin)
+
+CORS_ALLOW_CREDENTIALS = True
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
