@@ -34,6 +34,7 @@ CSRF_TRUSTED_ORIGINS = [
     for o in os.getenv(
         'CSRF_TRUSTED_ORIGINS',
         'https://loonko-api2.ethioace.com,http://localhost:3000,http://127.0.0.1:3000',
+        'https://loonko.vercel.app'
     ).split(',')
     if o.strip()
 ]
@@ -132,7 +133,6 @@ LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'Africa/Addis_Ababa'
 USE_I18N = True
 USE_TZ = True
-
 STATIC_URL = 'static/'
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
