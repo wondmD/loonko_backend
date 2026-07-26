@@ -18,6 +18,7 @@ ALLOWED_HOSTS = [
     for h in os.getenv(
         'ALLOWED_HOSTS',
         'localhost,127.0.0.1,testserver,loonko-api2.ethioace.com',
+        'www.loonko-api2.ethioace.com',
     ).split(',')
     if h.strip()
 ]
@@ -40,6 +41,7 @@ CSRF_TRUSTED_ORIGINS = [
 _PRODUCTION_CSRF = (
     'https://loonko-api2.ethioace.com',
     'https://loonko.vercel.app',
+    'www.loonko.vercel.app',
 )
 for _origin in _PRODUCTION_CSRF:
     if _origin not in CSRF_TRUSTED_ORIGINS:
