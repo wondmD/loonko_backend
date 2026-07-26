@@ -13,9 +13,30 @@ load_dotenv(BASE_DIR / '.env')
 
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure--7e7_j_k=^4k!l2$que8pib3h@fji_9dm1arxqu1$*hdrfkgn(')
 DEBUG = os.getenv('DEBUG', 'True').lower() in ('1', 'true', 'yes')
-ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,testserver').split(',') if h.strip()]
+ALLOWED_HOSTS = [
+    h.strip()
+    for h in os.getenv(
+        'ALLOWED_HOSTS',
+        'localhost,127.0.0.1,testserver,loonko-api2.ethioace.com',
+    ).split(',')
+    if h.strip()
+]
+# Always allow the production API host even if ALLOWED_HOSTS was set without it
+_PRODUCTION_HOSTS = ('loonko-api2.ethioace.com',)
+for _host in _PRODUCTION_HOSTS:
+    if _host not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(_host)
 if DEBUG and 'testserver' not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append('testserver')
+
+CSRF_TRUSTED_ORIGINS = [
+    o.strip()
+    for o in os.getenv(
+        'CSRF_TRUSTED_ORIGINS',
+        'https://loonko-api2.ethioace.com,http://localhost:3000,http://127.0.0.1:3000',
+    ).split(',')
+    if o.strip()
+]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
