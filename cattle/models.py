@@ -1,5 +1,5 @@
 from datetime import timedelta
-
+from django.conf import settings
 from django.db import models
 from django.db.models import Sum, F
 from django.utils import timezone
@@ -40,6 +40,19 @@ class Cattle(models.Model):
         blank=True,
         on_delete=models.SET_NULL,
         related_name='offspring_as_father',
+    )
+    sale_price = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text='Selling price when animal is sold.',
+    )
+    sale_date = models.DateField(null=True, blank=True)
+    cull_reason = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text='Reason for culling (e.g. low fertility, chronic mastitis, old age).',
     )
     notes = models.TextField(blank=True)
     photo_front = models.ImageField(
@@ -89,6 +102,21 @@ class Cattle(models.Model):
             return None
         return (timezone.localdate() - self.date_of_birth).days
 
+    @property
+    def registered_on(self):
+        """Calendar date the animal entered Loonkoo — ignore pre-registration misses."""
+        if self.created_at:
+            return timezone.localdate(self.created_at)
+        return timezone.localdate()
+
+    @property
+    def is_actively_milking(self):
+        """True when this female is in a lactation stage that expects daily milk logs."""
+        if self.sex != self.Sex.FEMALE or self.status != self.Status.ACTIVE:
+            return False
+        stage = self.lactation_info().get('stage')
+        return stage in ('FRESH', 'PEAK', 'MID', 'LATE')
+
     def last_calving_date(self):
         from breeding.models import BirthRecord
 
@@ -124,6 +152,21 @@ class Cattle(models.Model):
         pregnancy = self.active_pregnancy()
         last_calving = self.last_calving_date()
         dim = (today - last_calving).days if last_calving else None
+
+        if last_calving:
+            from husbandry.models import HusbandryTask
+            last_dry_off = self.husbandry_tasks.filter(
+                task_type=HusbandryTask.TaskType.DRY_OFF,
+                status=HusbandryTask.Status.COMPLETED,
+            ).order_by('-completed_at').first()
+            if last_dry_off and last_dry_off.completed_at.date() >= last_calving:
+                return {
+                    'stage': 'DRY',
+                    'stage_label': 'Dry (manual)',
+                    'days_in_milk': dim,
+                    'last_calving_date': last_calving.isoformat(),
+                    'is_pregnant': bool(pregnancy),
+                }
 
         if pregnancy and pregnancy.expected_calving_date:
             days_to_calving = (pregnancy.expected_calving_date - today).days
@@ -191,7 +234,10 @@ class Cattle(models.Model):
         from husbandry.models import HusbandryTask
 
         tasks = (
-            self.husbandry_tasks.filter(status=HusbandryTask.Status.PENDING)
+            self.husbandry_tasks.filter(
+                status=HusbandryTask.Status.PENDING,
+                due_date__gte=self.registered_on,
+            )
             .order_by('due_date', 'priority')[:8]
         )
         for task in tasks:
@@ -290,3 +336,87 @@ class Cattle(models.Model):
                 float(liters_30) / record_count_30 if record_count_30 else 0
             ),
         }
+
+    def pedigree_tree(self):
+        """Build 3-generation lineage tree (self, parents, grandparents, offspring)."""
+        def node(c):
+            if not c:
+                return None
+            return {
+                'id': c.id,
+                'tag_id': c.tag_id,
+                'name': c.name,
+                'breed': c.breed,
+                'sex': c.sex,
+            }
+
+        mother_node = node(self.mother)
+        father_node = node(self.father)
+
+        m_grand_dam = node(self.mother.mother) if self.mother else None
+        m_grand_sire = node(self.mother.father) if self.mother else None
+        f_grand_dam = node(self.father.mother) if self.father else None
+        f_grand_sire = node(self.father.father) if self.father else None
+
+        offspring_qs = Cattle.objects.filter(
+            models.Q(mother=self) | models.Q(father=self)
+        ).order_by('-date_of_birth')[:10]
+
+        return {
+            'self': node(self),
+            'mother': mother_node,
+            'father': father_node,
+            'maternal_granddam': m_grand_dam,
+            'maternal_grandsire': m_grand_sire,
+            'paternal_granddam': f_grand_dam,
+            'paternal_grandsire': f_grand_sire,
+            'offspring': [node(child) for child in offspring_qs],
+        }
+
+
+class CattleGrowthLog(models.Model):
+    farm = models.ForeignKey(
+        'farm.Farm',
+        on_delete=models.CASCADE,
+        related_name='growth_logs',
+    )
+    cattle = models.ForeignKey(
+        Cattle,
+        on_delete=models.CASCADE,
+        related_name='growth_logs',
+    )
+    date = models.DateField(default=timezone.localdate)
+    weight_kg = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text='Body weight in kg.',
+    )
+    bcs = models.DecimalField(
+        max_digits=3,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text='Body Condition Score (1.00 to 5.00 standard dairy scale).',
+    )
+    notes = models.TextField(blank=True)
+    recorded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='growth_logs',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-date', '-created_at']
+        indexes = [
+            models.Index(fields=['farm', 'date']),
+            models.Index(fields=['cattle', 'date']),
+        ]
+
+    def __str__(self):
+        return f'Growth {self.cattle.tag_id} @ {self.date}: {self.weight_kg}kg, BCS {self.bcs}'
+

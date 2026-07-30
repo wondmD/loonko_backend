@@ -207,5 +207,7 @@ SIMPLE_JWT = {
 
 # Low-milk alert: flag if total liters are below this fraction of cow's recent average
 LOW_MILK_THRESHOLD_RATIO = float(os.getenv('LOW_MILK_THRESHOLD_RATIO', '0.7'))
+# Hour (local) after which missing milk for *today* is alerted; yesterday always checked
+MISSED_MILK_ALERT_AFTER_HOUR = int(os.getenv('MISSED_MILK_ALERT_AFTER_HOUR', '18'))
 VACCINATION_DUE_DAYS = int(os.getenv('VACCINATION_DUE_DAYS', '7'))
 CALVING_DUE_DAYS = int(os.getenv('CALVING_DUE_DAYS', '14'))

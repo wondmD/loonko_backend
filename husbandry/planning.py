@@ -31,6 +31,7 @@ def _window(
     ideal=None,
     description='',
     today=None,
+    registered_on=None,
 ):
     today = today or timezone.localdate()
     if start is None or end is None:
@@ -56,6 +57,22 @@ def _window(
         ideal = start
     if ideal > end:
         ideal = end
+
+    # Milestones fully before registration are out of scope for this herd.
+    if registered_on is not None and end < registered_on:
+        return {
+            'key': key,
+            'title': title,
+            'start': _iso(start),
+            'end': _iso(end),
+            'ideal': _iso(ideal),
+            'status': 'N/A',
+            'days_until_start': (start - today).days,
+            'days_until_end': (end - today).days,
+            'severity': 'INFO',
+            'message': 'Before this animal was registered — not tracked as overdue.',
+            'description': description,
+        }
 
     days_start = (start - today).days
     days_end = (end - today).days
@@ -220,6 +237,7 @@ def suggested_windows(cattle):
     settings = get_settings(cattle.farm)
     stage = classify_animal(cattle)
     windows = []
+    registered_on = cattle.registered_on
 
     if cattle.sex != cattle.Sex.FEMALE or cattle.status != cattle.Status.ACTIVE:
         return {
@@ -238,18 +256,22 @@ def suggested_windows(cattle):
         cattle.pregnancies.filter(status='OPEN').order_by('-created_at').first()
     )
 
+    def win(**kwargs):
+        kwargs.setdefault('today', today)
+        kwargs.setdefault('registered_on', registered_on)
+        return _window(**kwargs)
+
     # Calf weaning
     if stage['category'] == 'CALF' and cattle.date_of_birth:
         wean = cattle.date_of_birth + timedelta(days=settings.weaning_days)
         windows.append(
-            _window(
+            win(
                 key='WEANING',
                 title='Weaning window',
                 start=wean - timedelta(days=7),
                 end=wean + timedelta(days=14),
                 ideal=wean,
                 description=f'Target ~{settings.weaning_days} days of age.',
-                today=today,
             )
         )
 
@@ -259,8 +281,10 @@ def suggested_windows(cattle):
             first = cattle.date_of_birth + timedelta(
                 days=settings.first_breeding_age_days
             )
+            # Only track first AI from registration forward
+            first = max(first, registered_on)
             windows.append(
-                _window(
+                win(
                     key='FIRST_INSEMINATION',
                     title='First insemination window',
                     start=first,
@@ -270,21 +294,23 @@ def suggested_windows(cattle):
                         f'Heifers typically eligible ~{settings.first_breeding_age_days} '
                         f'days of age (~{round(settings.first_breeding_age_days / 30.4)} months).'
                     ),
-                    today=today,
                 )
             )
         elif last_calving:
             vwp_end = last_calving + timedelta(days=settings.voluntary_waiting_days)
-            if last_ai and last_ai >= last_calving:
-                # Return heat after last service
+            if last_ai and last_ai >= max(last_calving, registered_on):
+                # Return heat after last service recorded on the system
                 next_heat = last_ai + timedelta(days=settings.estrous_cycle_days)
                 while next_heat < today - timedelta(days=settings.estrous_cycle_days):
                     next_heat += timedelta(days=settings.estrous_cycle_days)
-                start = max(next_heat - timedelta(days=2), vwp_end)
+                start = max(next_heat - timedelta(days=2), vwp_end, registered_on)
             else:
-                start = vwp_end
+                # Past VWP before registration → start heat watch from registration day
+                start = max(vwp_end, registered_on)
+            if start < today:
+                start = today
             windows.append(
-                _window(
+                win(
                     key='INSEMINATION',
                     title='Suggested insemination window',
                     start=start,
@@ -294,27 +320,25 @@ def suggested_windows(cattle):
                         f'After {settings.voluntary_waiting_days}-day VWP; '
                         f'~{settings.estrous_cycle_days}-day heat cycle.'
                     ),
-                    today=today,
                 )
             )
         elif stage['category'] == 'HEIFER':
             windows.append(
-                _window(
+                win(
                     key='INSEMINATION',
                     title='Suggested insemination window',
                     start=today,
                     end=today + timedelta(days=settings.estrous_cycle_days),
                     ideal=today,
                     description='Open heifer — breed on confirmed heat.',
-                    today=today,
                 )
             )
 
-    # Pregnancy check after last AI
-    if last_ai and not pregnancy:
+    # Pregnancy check after last AI (only if AI was on/after registration)
+    if last_ai and last_ai >= registered_on and not pregnancy:
         check = last_ai + timedelta(days=settings.pregnancy_check_days)
         windows.append(
-            _window(
+            win(
                 key='PREGNANCY_CHECK',
                 title='Pregnancy checkup window',
                 start=check - timedelta(days=5),
@@ -324,7 +348,6 @@ def suggested_windows(cattle):
                     f'Diagnose ~{settings.pregnancy_check_days} days after '
                     f'AI/service on {_iso(last_ai)}.'
                 ),
-                today=today,
             )
         )
 
@@ -334,13 +357,13 @@ def suggested_windows(cattle):
         ecd = pregnancy.expected_calving_date
     elif open_preg and open_preg.expected_calving_date:
         ecd = open_preg.expected_calving_date
-    elif last_ai:
+    elif last_ai and last_ai >= registered_on:
         ecd = last_ai + timedelta(days=settings.gestation_days)
 
-    if ecd and (pregnancy or open_preg or last_ai):
+    if ecd and (pregnancy or open_preg or (last_ai and last_ai >= registered_on)):
         dry = ecd - timedelta(days=settings.dry_period_days)
         windows.append(
-            _window(
+            win(
                 key='DRY_OFF',
                 title='Suggested dry-off window',
                 start=dry - timedelta(days=7),
@@ -350,23 +373,21 @@ def suggested_windows(cattle):
                     f'~{settings.dry_period_days} days before expected calving '
                     f'({_iso(ecd)}).'
                 ),
-                today=today,
             )
         )
         prep = ecd - timedelta(days=settings.calving_prep_days)
         windows.append(
-            _window(
+            win(
                 key='CALVING_PREP',
                 title='Calving preparation window',
                 start=prep,
                 end=ecd,
                 ideal=prep,
                 description='Move to calving pen and monitor closely.',
-                today=today,
             )
         )
         windows.append(
-            _window(
+            win(
                 key='CALVING',
                 title='Expected calving window',
                 start=ecd - timedelta(days=7),
@@ -375,7 +396,6 @@ def suggested_windows(cattle):
                 description=(
                     f'Gestation ~{settings.gestation_days} days from breeding/AI.'
                 ),
-                today=today,
             )
         )
 
@@ -387,7 +407,7 @@ def suggested_windows(cattle):
         # Only if not already covered by pregnant dry-off above
         if not any(w['key'] == 'DRY_OFF' for w in windows):
             windows.append(
-                _window(
+                win(
                     key='DRY_OFF_PROJECTED',
                     title='Projected dry-off (lactation)',
                     start=proj_dry - timedelta(days=10),
@@ -397,15 +417,14 @@ def suggested_windows(cattle):
                         f'Based on {settings.lactation_target_days}-day lactation '
                         'target if still open.'
                     ),
-                    today=today,
                 )
             )
 
-    # Fresh cow monitor after calving
+    # Fresh cow monitor after calving (only while still within window after registration)
     if last_calving:
         fresh_end = last_calving + timedelta(days=settings.fresh_monitor_days)
         windows.append(
-            _window(
+            win(
                 key='FRESH_MONITOR',
                 title='Fresh-cow checkup window',
                 start=last_calving,
@@ -415,9 +434,11 @@ def suggested_windows(cattle):
                     f'Daily monitoring for {settings.fresh_monitor_days} days '
                     'post-calving.'
                 ),
-                today=today,
             )
         )
+
+    # Drop milestones that fully predate registration
+    windows = [w for w in windows if w.get('status') != 'N/A']
 
     # Sort: overdue first, then active, then by start
     order = {'OVERDUE': 0, 'ACTIVE': 1, 'UPCOMING': 2, 'N/A': 3}
@@ -456,6 +477,7 @@ def evaluate_risks(cattle, stage=None, windows=None, today=None):
     stage = stage or classify_animal(cattle)
     windows = windows if windows is not None else suggested_windows(cattle)['windows']
     warnings = []
+    registered_on = cattle.registered_on
 
     if cattle.sex != cattle.Sex.FEMALE or cattle.status != cattle.Status.ACTIVE:
         return warnings
@@ -470,6 +492,18 @@ def evaluate_risks(cattle, stage=None, windows=None, today=None):
             }
         )
 
+    def _parse_date(value):
+        if value is None:
+            return None
+        if hasattr(value, 'year'):
+            return value
+        try:
+            from datetime import date as date_cls
+
+            return date_cls.fromisoformat(str(value)[:10])
+        except (TypeError, ValueError):
+            return None
+
     for w in windows:
         if w['status'] == 'OVERDUE' and w['key'] in (
             'PREGNANCY_CHECK',
@@ -480,6 +514,10 @@ def evaluate_risks(cattle, stage=None, windows=None, today=None):
             'WEANING',
             'FRESH_MONITOR',
         ):
+            # Skip windows that already ended before the animal was registered
+            window_end = _parse_date(w.get('end'))
+            if window_end is not None and window_end < registered_on:
+                continue
             severity = 'CRITICAL' if w['key'] in ('CALVING', 'PREGNANCY_CHECK') else 'WARNING'
             add(
                 f'OVERDUE_{w["key"]}',
@@ -488,61 +526,67 @@ def evaluate_risks(cattle, stage=None, windows=None, today=None):
                 severity=severity,
             )
 
-    # Calved expected but no birth
+    # Calved expected but no birth (only if ECD was on/after registration)
     pregnancy = cattle.active_pregnancy()
     if pregnancy and pregnancy.expected_calving_date:
-        if pregnancy.expected_calving_date < today - timedelta(days=3):
+        ecd = pregnancy.expected_calving_date
+        if ecd >= registered_on and ecd < today - timedelta(days=3):
             add(
                 'CALVING_PAST_DUE',
                 'Expected calving passed',
                 (
-                    f'{cattle.tag_id} was due around {pregnancy.expected_calving_date} '
+                    f'{cattle.tag_id} was due around {ecd} '
                     'but no birth record is logged.'
                 ),
                 severity='CRITICAL',
             )
 
-    # Open too long after VWP without breeding
+    # Open too long — count open days only from registration onward
     last_calving = cattle.last_calving_date()
     last_breeding = cattle.last_breeding_event()
-    if (
-        last_calving
-        and not pregnancy
-        and (today - last_calving).days > settings.voluntary_waiting_days + 45
-    ):
-        recent_ai = (
-            last_breeding
-            and last_breeding.mating_date >= last_calving
-            and (today - last_breeding.mating_date).days < 40
-        )
-        if not recent_ai:
-            add(
-                'OPEN_TOO_LONG',
-                'Open cow past breeding target',
-                (
-                    f'{cattle.tag_id} is {(today - last_calving).days} days open '
-                    f'(VWP {settings.voluntary_waiting_days}d). Consider heat detection / AI.'
-                ),
-                severity='WARNING',
+    if last_calving and not pregnancy:
+        open_since = max(last_calving, registered_on)
+        if (today - open_since).days > settings.voluntary_waiting_days + 45:
+            recent_ai = (
+                last_breeding
+                and last_breeding.mating_date >= open_since
+                and (today - last_breeding.mating_date).days < 40
             )
+            if not recent_ai:
+                add(
+                    'OPEN_TOO_LONG',
+                    'Open cow past breeding target',
+                    (
+                        f'{cattle.tag_id} has been open '
+                        f'{(today - open_since).days} days since tracking started '
+                        f'(VWP {settings.voluntary_waiting_days}d). '
+                        'Consider heat detection / AI.'
+                    ),
+                    severity='WARNING',
+                )
 
-    # Heifer past breeding age never served
+    # Heifer past breeding age never served — only if eligibility was after registration
     age = cattle.age_days
     if (
         stage['category'] == 'HEIFER'
         and age is not None
+        and cattle.date_of_birth
         and age > settings.first_breeding_age_days + 60
         and not last_breeding
     ):
-        add(
-            'HEIFER_UNBRED',
-            'Heifer past first-breeding age',
-            (
-                f'{cattle.tag_id} is {age} days old and has no breeding/AI record '
-                f'(target ~{settings.first_breeding_age_days} days).'
-            ),
-            severity='WARNING',
+        first_breed_on = cattle.date_of_birth + timedelta(
+            days=settings.first_breeding_age_days
         )
+        if first_breed_on >= registered_on:
+            add(
+                'HEIFER_UNBRED',
+                'Heifer past first-breeding age',
+                (
+                    f'{cattle.tag_id} is {age} days old and has no breeding/AI record '
+                    f'(target ~{settings.first_breeding_age_days} days).'
+                ),
+                severity='WARNING',
+            )
 
     # Missing DOB for young animal planning
     if not cattle.date_of_birth and stage['category'] in ('CALF', 'HEIFER'):

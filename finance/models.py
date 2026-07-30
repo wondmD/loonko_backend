@@ -10,6 +10,7 @@ class Transaction(models.Model):
     class Category(models.TextChoices):
         MILK_PRODUCTION = 'milk_production', 'Milk production income'
         MILK_SALE = 'milk_sale', 'Milk cash sale'
+        CATTLE_SALE = 'cattle_sale', 'Cattle sale income'
         FEED = 'feed', 'Feed'
         VET = 'vet', 'Veterinary'
         LABOR = 'labor', 'Labor'

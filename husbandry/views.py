@@ -1,5 +1,7 @@
 from datetime import timedelta
 
+from django.db.models import F
+from django.db.models.functions import TruncDate
 from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.decorators import action
@@ -17,6 +19,13 @@ from .serializers import (
     HusbandryTaskSerializer,
 )
 from .services import generate_husbandry_alerts, sync_all_female_cattle, sync_cattle_husbandry
+
+
+def _exclude_pre_registration(qs):
+    """Ignore auto care due before the animal was added to Loonkoo."""
+    return qs.annotate(
+        _registered_on=TruncDate('cattle__created_at'),
+    ).filter(due_date__gte=F('_registered_on'))
 
 
 class HusbandryTaskViewSet(FarmScopedQuerySetMixin, viewsets.ModelViewSet):
@@ -48,6 +57,9 @@ class HusbandryTaskViewSet(FarmScopedQuerySetMixin, viewsets.ModelViewSet):
             )
         elif due == 'open':
             qs = qs.filter(status=HusbandryTask.Status.PENDING)
+
+        if due in ('today', 'overdue', 'upcoming', 'open'):
+            qs = _exclude_pre_registration(qs)
         return qs
 
     def get_permissions(self):
@@ -113,7 +125,7 @@ class HusbandryTaskViewSet(FarmScopedQuerySetMixin, viewsets.ModelViewSet):
         farm = require_user_farm(request.user)
         today = timezone.localdate()
         days = int(request.query_params.get('days', '14'))
-        qs = (
+        qs = _exclude_pre_registration(
             HusbandryTask.objects.filter(
                 farm=farm,
                 status=HusbandryTask.Status.PENDING,

@@ -8,8 +8,16 @@ from husbandry.services import life_stage
 from husbandry.planning import suggested_windows
 from milk.serializers import MilkRecordSerializer
 
-from .models import Cattle
+from .models import Cattle, CattleGrowthLog
 from .reproductive_intake import apply_reproductive_intake
+
+
+class CattleGrowthLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CattleGrowthLog
+        fields = ('id', 'cattle', 'date', 'weight_kg', 'bcs', 'notes', 'recorded_by', 'created_at')
+        read_only_fields = ('id', 'cattle', 'recorded_by', 'created_at')
+
 
 
 def _abs_url(request, field):
@@ -82,6 +90,9 @@ class CattleSerializer(serializers.ModelSerializer):
             'sex',
             'date_of_birth',
             'status',
+            'sale_price',
+            'sale_date',
+            'cull_reason',
             'mother',
             'father',
             'notes',
@@ -209,7 +220,37 @@ class CattleSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         validated_data = _apply_photo_files(validated_data, self.context.get('request'))
-        return super().update(instance, validated_data)
+        old_status = instance.status
+        instance = super().update(instance, validated_data)
+
+        if instance.status in ('SOLD', 'DEAD', 'CULLED') and old_status not in ('SOLD', 'DEAD', 'CULLED'):
+            # 1. Cancel pending care tasks
+            from husbandry.models import HusbandryTask
+            HusbandryTask.objects.filter(
+                cattle=instance,
+                status=HusbandryTask.Status.PENDING,
+            ).update(status=HusbandryTask.Status.CANCELLED)
+
+        if instance.status == 'SOLD' and instance.sale_price and instance.sale_price > 0:
+            # 2. Auto-post Cattle Sale Income to Finance
+            from finance.models import Transaction
+            from django.utils import timezone
+            sale_date = instance.sale_date or timezone.localdate()
+            Transaction.objects.update_or_create(
+                farm=instance.farm,
+                source_key=f'cattle-sale-{instance.id}',
+                defaults={
+                    'type': Transaction.Type.INCOME,
+                    'category': Transaction.Category.CATTLE_SALE,
+                    'amount': instance.sale_price,
+                    'currency': instance.farm.currency or 'ETB',
+                    'date': sale_date,
+                    'description': f'Cattle Sale: {instance.tag_id} ({instance.name or instance.breed or "cattle"})',
+                    'is_auto': True,
+                    'recorded_by': self.context.get('request').user if self.context.get('request') else None,
+                }
+            )
+        return instance
 
 
 class CattleWorkerUpdateSerializer(serializers.ModelSerializer):
@@ -270,6 +311,11 @@ class CattleDetailSerializer(CattleSerializer):
     upcoming_vaccinations = serializers.SerializerMethodField()
     husbandry_tasks = serializers.SerializerMethodField()
 
+    pedigree_tree = serializers.SerializerMethodField()
+    growth_logs = serializers.SerializerMethodField()
+    latest_bcs = serializers.SerializerMethodField()
+    latest_weight = serializers.SerializerMethodField()
+
     class Meta(CattleSerializer.Meta):
         fields = CattleSerializer.Meta.fields + (
             'age_days',
@@ -280,6 +326,10 @@ class CattleDetailSerializer(CattleSerializer):
             'alerts',
             'upcoming_vaccinations',
             'husbandry_tasks',
+            'pedigree_tree',
+            'growth_logs',
+            'latest_bcs',
+            'latest_weight',
         )
 
     def get_husbandry_plan(self, obj):
@@ -340,3 +390,18 @@ class CattleDetailSerializer(CattleSerializer):
             due_date__lte=today + timedelta(days=90),
         ).order_by('due_date')[:30]
         return HusbandryTaskSerializer(qs, many=True).data
+
+    def get_pedigree_tree(self, obj):
+        return obj.pedigree_tree()
+
+    def get_growth_logs(self, obj):
+        logs = obj.growth_logs.order_by('-date', '-created_at')[:10]
+        return CattleGrowthLogSerializer(logs, many=True).data
+
+    def get_latest_bcs(self, obj):
+        log = obj.growth_logs.exclude(bcs__isnull=True).order_by('-date', '-created_at').first()
+        return float(log.bcs) if log else None
+
+    def get_latest_weight(self, obj):
+        log = obj.growth_logs.exclude(weight_kg__isnull=True).order_by('-date', '-created_at').first()
+        return float(log.weight_kg) if log else None

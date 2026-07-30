@@ -5,7 +5,7 @@ from farm.models import Farm
 
 
 class Command(BaseCommand):
-    help = 'Generate vaccination, calving, and husbandry due alerts'
+    help = 'Generate vaccination, calving, husbandry, and missed-milk alerts'
 
     def add_arguments(self, parser):
         parser.add_argument('--farm-id', type=int, default=None)

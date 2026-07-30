@@ -26,7 +26,7 @@ def sync_daily_milk_income(farm, day=None, *, force=False):
         ).delete()
         return None
 
-    price = farm.milk_price_per_liter or Decimal('0')
+    price = Decimal(str(farm.milk_price_per_liter or 0))
     if price <= 0 and not force:
         Transaction.objects.filter(
             farm=farm, source_key=source_key, is_auto=True
@@ -183,7 +183,7 @@ def milk_finance_snapshot(farm, days=30):
 
     today = timezone.localdate()
     start = today - timedelta(days=days)
-    price = farm.milk_price_per_liter if farm else Decimal('0')
+    price = Decimal(str(farm.milk_price_per_liter or 0)) if farm else Decimal('0')
     currency = farm.currency if farm else 'ETB'
     mode = farm.milk_income_mode if farm else Farm.MilkIncomeMode.ACCRUAL
 

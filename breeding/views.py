@@ -1,5 +1,7 @@
-from rest_framework import viewsets
+from rest_framework import status, viewsets
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.response import Response
 
 from core.farm_utils import require_user_farm
 from core.permissions import IsAppUser, IsOwner, IsOwnerOrVeterinarian, IsOwnerOrWorker
@@ -84,3 +86,37 @@ class BirthRecordViewSet(FarmScopedQuerySetMixin, viewsets.ModelViewSet):
         if pregnancy.farm_id != farm.id:
             raise PermissionDenied('Pregnancy does not belong to your farm.')
         serializer.save(farm=farm)
+
+
+@api_view(['GET'])
+@permission_classes([IsAppUser])
+def breeding_herd(request):
+    farm = require_user_farm(request.user)
+    from .services import herd_breeding_overview
+
+    return Response(herd_breeding_overview(farm))
+
+
+@api_view(['GET'])
+@permission_classes([IsAppUser])
+def breeding_upcoming(request):
+    farm = require_user_farm(request.user)
+    days = int(request.query_params.get('days', '30'))
+    from .services import breeding_upcoming_board
+
+    return Response(breeding_upcoming_board(farm, days=days))
+
+
+@api_view(['GET'])
+@permission_classes([IsAppUser])
+def breeding_cattle_history(request, cattle_id):
+    from cattle.models import Cattle
+
+    from .services import cattle_breeding_history
+
+    farm = require_user_farm(request.user)
+    try:
+        cattle = Cattle.objects.get(pk=cattle_id, farm=farm)
+    except Cattle.DoesNotExist:
+        return Response({'detail': 'Cattle not found.'}, status=status.HTTP_404_NOT_FOUND)
+    return Response(cattle_breeding_history(cattle))

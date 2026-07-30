@@ -28,6 +28,13 @@ class BreedingEventSerializer(serializers.ModelSerializer):
             )
         if dam.status != dam.Status.ACTIVE:
             raise serializers.ValidationError('Dam must be an active animal.')
+            
+        active_pregnancies = dam.pregnancies.filter(status__in=[Pregnancy.Status.OPEN, Pregnancy.Status.PREGNANT])
+        if active_pregnancies.exists():
+            raise serializers.ValidationError(
+                'Cannot add insemination record. This cattle already has an active or unconfirmed pregnancy. '
+                'Please record the outcome (calved or failed) before adding a new insemination.'
+            )
         return dam
 
 
@@ -55,6 +62,15 @@ class PregnancySerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 'Pregnancy records are for female cattle only.'
             )
+        if cattle.status != cattle.Status.ACTIVE:
+            raise serializers.ValidationError('Cannot add pregnancy for inactive cattle.')
+            
+        if not self.instance:
+            active_pregnancies = cattle.pregnancies.filter(status__in=[Pregnancy.Status.OPEN, Pregnancy.Status.PREGNANT])
+            if active_pregnancies.exists():
+                raise serializers.ValidationError(
+                    'This cattle already has an active or unconfirmed pregnancy.'
+                )
         return cattle
 
     def validate(self, attrs):

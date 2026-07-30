@@ -27,6 +27,20 @@ class MilkRecordSerializer(serializers.ModelSerializer):
     def get_total_liters(self, obj):
         return obj.total_liters
 
+    def validate_cattle(self, cattle):
+        if cattle.status != cattle.Status.ACTIVE:
+            raise serializers.ValidationError('Cannot add milk record for inactive cattle (sold, culled, or dead).')
+        if cattle.sex != cattle.Sex.FEMALE:
+            raise serializers.ValidationError('Cannot add milk record for male cattle.')
+        if cattle.age_days is not None and cattle.age_days < 500:
+            raise serializers.ValidationError('Cannot add milk record for a calf or young heifer under 500 days old.')
+            
+        stage = cattle.lactation_info().get('stage')
+        if stage == 'DRY':
+            raise serializers.ValidationError('Cannot add milk record for a cow that is dried off.')
+            
+        return cattle
+
     def validate_morning_liters(self, value):
         if value < 0:
             raise serializers.ValidationError('Must be >= 0')
@@ -62,6 +76,11 @@ class FeedScheduleSerializer(serializers.ModelSerializer):
         if value is not None and value < 0:
             raise serializers.ValidationError('Cost cannot be negative.')
         return value
+
+    def validate_cattle(self, cattle):
+        if cattle and cattle.status != cattle.Status.ACTIVE:
+            raise serializers.ValidationError('Cannot add feed schedule for inactive cattle.')
+        return cattle
 
     def validate_quantity(self, value):
         if value < 0:

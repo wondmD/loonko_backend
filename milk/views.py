@@ -35,10 +35,16 @@ class MilkRecordViewSet(FarmScopedQuerySetMixin, viewsets.ModelViewSet):
             raise PermissionDenied('Cattle does not belong to your farm.')
         record = serializer.save(farm=farm, recorded_by=self.request.user)
         self._maybe_low_milk_alert(record)
+        from milk.services import clear_missed_milk_alert
+
+        clear_missed_milk_alert(record)
 
     def perform_update(self, serializer):
         record = serializer.save()
         self._maybe_low_milk_alert(record)
+        from milk.services import clear_missed_milk_alert
+
+        clear_missed_milk_alert(record)
 
     def destroy(self, request, *args, **kwargs):
         if request.user.role == 'WORKER':
@@ -86,6 +92,32 @@ class FeedScheduleViewSet(FarmScopedQuerySetMixin, viewsets.ModelViewSet):
         if cattle is not None and cattle.farm_id != farm.id:
             raise PermissionDenied('Cattle does not belong to your farm.')
         serializer.save(farm=farm)
+
+
+@api_view(['GET'])
+@permission_classes([IsAppUser])
+def milk_herd(request):
+    """Cattle milking overview table for the milk page."""
+    farm = require_user_farm(request.user)
+    from .services import herd_milk_overview
+
+    return Response(herd_milk_overview(farm))
+
+
+@api_view(['GET'])
+@permission_classes([IsAppUser])
+def milk_cattle_history(request, cattle_id):
+    """Milk record history for one cow, grouped by calving cycle."""
+    from cattle.models import Cattle
+
+    from .services import cattle_milk_history_by_cycle
+
+    farm = require_user_farm(request.user)
+    try:
+        cattle = Cattle.objects.get(pk=cattle_id, farm=farm)
+    except Cattle.DoesNotExist:
+        return Response({'detail': 'Cattle not found.'}, status=404)
+    return Response(cattle_milk_history_by_cycle(cattle))
 
 
 @api_view(['GET'])

@@ -36,6 +36,19 @@ def _upsert_task(
 ):
     if due_date is None:
         return None
+
+    # Do not schedule / revive tasks for milestones that were already past
+    # before this animal was registered in Loonkoo.
+    registered_on = getattr(cattle, 'registered_on', None)
+    if registered_on is not None and due_date < registered_on:
+        HusbandryTask.objects.filter(
+            farm_id=cattle.farm_id,
+            source_key=source_key,
+            is_auto=True,
+            status=HusbandryTask.Status.PENDING,
+        ).update(status=HusbandryTask.Status.CANCELLED)
+        return None
+
     if active_keys is not None:
         active_keys.add(source_key)
 
@@ -242,8 +255,12 @@ def sync_cattle_husbandry(cattle):
                         active_keys=active_keys,
                     )
 
-    # --- After breeding: pregnancy check ---
-    if last_breeding and not pregnancy:
+    # --- After breeding: pregnancy check (only for services after registration) ---
+    if (
+        last_breeding
+        and last_breeding.mating_date >= cattle.registered_on
+        and not pregnancy
+    ):
         check_on = last_breeding.mating_date + timedelta(
             days=settings.pregnancy_check_days
         )
@@ -365,6 +382,15 @@ def sync_cattle_husbandry(cattle):
     ).exclude(source_key__in=active_keys)
     cancelled = stale.update(status=HusbandryTask.Status.CANCELLED)
 
+    # Also drop any leftover pending auto tasks dated before registration
+    pre_reg = HusbandryTask.objects.filter(
+        cattle=cattle,
+        is_auto=True,
+        status=HusbandryTask.Status.PENDING,
+        due_date__lt=cattle.registered_on,
+    ).update(status=HusbandryTask.Status.CANCELLED)
+    cancelled += pre_reg
+
     return {
         'cattle_id': cattle.id,
         'active_tasks': len(active_keys),
@@ -469,6 +495,9 @@ def generate_husbandry_alerts(farm=None):
         )
 
         for task in tasks:
+            # Ignore milestones that were already due before registration
+            if task.due_date < task.cattle.registered_on:
+                continue
             days = (task.due_date - today).days
             if days < 0:
                 severity = Alert.Severity.CRITICAL

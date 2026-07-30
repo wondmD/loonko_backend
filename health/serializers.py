@@ -22,6 +22,11 @@ class HealthRecordSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ('id', 'recorded_by', 'created_at')
 
+    def validate_cattle(self, cattle):
+        if cattle.status != cattle.Status.ACTIVE:
+            raise serializers.ValidationError('Cannot add health records for inactive cattle (sold, culled, or dead).')
+        return cattle
+
 
 class VaccinationSerializer(serializers.ModelSerializer):
     cattle_tag = serializers.CharField(source='cattle.tag_id', read_only=True)
@@ -47,6 +52,11 @@ class VaccinationSerializer(serializers.ModelSerializer):
         if value is not None and value < 0:
             raise serializers.ValidationError('Cost cannot be negative.')
         return value
+
+    def validate_cattle(self, cattle):
+        if cattle.status != cattle.Status.ACTIVE:
+            raise serializers.ValidationError('Cannot add vaccination records for inactive cattle (sold, culled, or dead).')
+        return cattle
 
 
 class TreatmentSerializer(serializers.ModelSerializer):
@@ -75,3 +85,8 @@ class TreatmentSerializer(serializers.ModelSerializer):
         if value is not None and value < 0:
             raise serializers.ValidationError('Cost cannot be negative.')
         return value
+
+    def validate_cattle(self, cattle):
+        if cattle.status != cattle.Status.ACTIVE:
+            raise serializers.ValidationError('Cannot add treatment records for inactive cattle (sold, culled, or dead).')
+        return cattle

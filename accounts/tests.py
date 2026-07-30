@@ -10,26 +10,29 @@ User = get_user_model()
 
 class AuthAndPermissionsTests(APITestCase):
     def setUp(self):
+        self.farm = Farm.objects.create(name='Test Farm', region='Oromia')
         self.owner = User.objects.create_user(
             username='owner',
             email='owner@test.local',
             password='testpass123',
             role=User.Role.OWNER,
+            farm=self.farm,
         )
         self.worker = User.objects.create_user(
             username='worker',
             email='worker@test.local',
             password='testpass123',
             role=User.Role.WORKER,
+            farm=self.farm,
         )
         self.vet = User.objects.create_user(
             username='vet',
             email='vet@test.local',
             password='testpass123',
             role=User.Role.VETERINARIAN,
+            farm=self.farm,
         )
-        Farm.objects.create(name='Test Farm', region='Oromia')
-        self.cow = Cattle.objects.create(tag_id='T-001', name='Bessie', breed='Holstein')
+        self.cow = Cattle.objects.create(farm=self.farm, tag_id='T-001', name='Bessie', breed='Holstein')
 
     def _login(self, email):
         res = self.client.post(
@@ -98,7 +101,7 @@ class AuthAndPermissionsTests(APITestCase):
     def test_farm_singleton(self):
         self._login('owner@test.local')
         res = self.client.post('/api/farm/', {'name': 'Another'}, format='json')
-        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(res.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
 
     def test_unique_milk_per_day(self):
         self._login('owner@test.local')

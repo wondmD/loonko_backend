@@ -85,3 +85,86 @@ class CattleViewSet(FarmScopedQuerySetMixin, viewsets.ModelViewSet):
         if request.user.role != 'OWNER':
             raise PermissionDenied('Only the owner can delete cattle.')
         return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=['get', 'post'])
+    def growth(self, request, pk=None):
+        cattle = self.get_object()
+        from .models import CattleGrowthLog
+        from .serializers import CattleGrowthLogSerializer
+        from .growth_services import log_cattle_growth
+
+        if request.method == 'GET':
+            logs = CattleGrowthLog.objects.filter(cattle=cattle).order_by('-date', '-created_at')
+            return Response(CattleGrowthLogSerializer(logs, many=True).data)
+
+        if request.user.role == 'VETERINARIAN':
+            raise PermissionDenied('Veterinarians have read-only access to growth logs.')
+            
+        weight_kg = request.data.get('weight_kg')
+        bcs = request.data.get('bcs')
+        date = request.data.get('date')
+        notes = request.data.get('notes', '')
+        
+        log = log_cattle_growth(
+            cattle=cattle,
+            weight_kg=weight_kg,
+            bcs=bcs,
+            date=date,
+            recorded_by=request.user,
+            notes=notes,
+        )
+        return Response(CattleGrowthLogSerializer(log).data, status=201)
+
+    @action(detail=True, methods=['get'])
+    def inbreeding_check(self, request, pk=None):
+        dam = self.get_object()
+        sire_id = request.query_params.get('sire_id')
+        if not sire_id:
+            return Response({'error': 'sire_id query parameter is required.'}, status=400)
+            
+        try:
+            sire = Cattle.objects.get(id=sire_id, farm=dam.farm)
+        except Cattle.DoesNotExist:
+            return Response({'error': 'Sire not found.'}, status=404)
+            
+        from .inbreeding import check_inbreeding_risk
+        return Response(check_inbreeding_risk(dam, sire))
+
+    @action(detail=True, methods=['post'])
+    def dry_off(self, request, pk=None):
+        cow = self.get_object()
+        if cow.sex != cow.Sex.FEMALE:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({'detail': 'Only female cattle can be dried off.'})
+        
+        from husbandry.models import HusbandryTask
+        from django.utils import timezone
+        
+        # Complete pending dry-off tasks
+        pending_dry = cow.husbandry_tasks.filter(
+            task_type=HusbandryTask.TaskType.DRY_OFF, 
+            status=HusbandryTask.Status.PENDING
+        )
+        if pending_dry.exists():
+            for task in pending_dry:
+                task.mark_completed(user=request.user, notes='Manually dried off via action.')
+        else:
+            # Create a completed one
+            HusbandryTask.objects.create(
+                farm=cow.farm,
+                cattle=cow,
+                task_type=HusbandryTask.TaskType.DRY_OFF,
+                title='Manual Dry-off',
+                due_date=timezone.localdate(),
+                status=HusbandryTask.Status.COMPLETED,
+                completed_at=timezone.now(),
+                completed_by=request.user,
+                is_auto=False,
+                source_key=f'manual-dry-off-{cow.id}-{timezone.now().timestamp()}'
+            )
+            
+        # Dismiss related alerts
+        cow.alerts.filter(is_read=False, title__icontains='Dry-off').update(is_read=True)
+        cow.alerts.filter(is_read=False, title__icontains='Dry-off').update(is_read=True)
+        
+        return Response({'status': 'dried_off'})

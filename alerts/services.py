@@ -37,7 +37,7 @@ def create_alert_if_new(
 
 
 def generate_due_alerts(farm=None):
-    """Create vaccination and calving due alerts. Returns count created."""
+    """Create vaccination, calving, husbandry, and missed-milk alerts. Returns count created."""
     from datetime import timedelta
 
     from django.conf import settings
@@ -98,5 +98,9 @@ def generate_due_alerts(farm=None):
 
         sync_all_female_cattle(farm=f)
         created += generate_husbandry_alerts(farm=f)
+
+        from milk.services import generate_missed_milk_alerts
+
+        created += generate_missed_milk_alerts(farm=f)
 
     return created
