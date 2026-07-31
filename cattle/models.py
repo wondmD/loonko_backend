@@ -34,12 +34,22 @@ class Cattle(models.Model):
         on_delete=models.SET_NULL,
         related_name='offspring_as_mother',
     )
+    mother_external_id = models.CharField(
+        max_length=128,
+        blank=True,
+        help_text='Info if mother is not in the system.',
+    )
     father = models.ForeignKey(
         'self',
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
         related_name='offspring_as_father',
+    )
+    father_external_id = models.CharField(
+        max_length=128,
+        blank=True,
+        help_text='Info if father is not in the system.',
     )
     sale_price = models.DecimalField(
         max_digits=12,
@@ -96,6 +106,43 @@ class Cattle(models.Model):
     def __str__(self):
         return f'{self.tag_id} ({self.name or self.breed or "cattle"})'
 
+    def save(self, *args, **kwargs):
+        self._optimize_photo(self.photo_front)
+        self._optimize_photo(self.photo_left)
+        self._optimize_photo(self.photo_right)
+        super().save(*args, **kwargs)
+
+    def _optimize_photo(self, photo_field):
+        if not photo_field:
+            return
+        file = getattr(photo_field, 'file', None)
+        if not file:
+            return
+        if getattr(file, '_committed', True) or getattr(file, '_is_optimizing', False):
+            return
+
+        from io import BytesIO
+        from PIL import Image
+        from django.core.files.base import ContentFile
+
+        try:
+            img = Image.open(file)
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            img.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+            output = BytesIO()
+            img.save(output, format='WebP', quality=85)
+            output.seek(0)
+            
+            original_name = photo_field.name.split('/')[-1]
+            base_name = original_name.rsplit('.', 1)[0]
+            new_name = f"{base_name}.webp"
+            
+            file._is_optimizing = True
+            photo_field.save(new_name, ContentFile(output.read()), save=False)
+        except Exception:
+            pass
+
     @property
     def age_days(self):
         if not self.date_of_birth:
@@ -118,8 +165,14 @@ class Cattle(models.Model):
         return stage in ('FRESH', 'PEAK', 'MID', 'LATE')
 
     def last_calving_date(self):
-        from breeding.models import BirthRecord
+        if hasattr(self, '_prefetched_objects_cache') and 'pregnancies' in self._prefetched_objects_cache:
+            calvings = []
+            for p in self.pregnancies.all():
+                if hasattr(p, 'birth_record'):
+                    calvings.append(p.birth_record.calving_date)
+            return max(calvings) if calvings else None
 
+        from breeding.models import BirthRecord
         birth = (
             BirthRecord.objects.filter(pregnancy__cattle=self)
             .order_by('-calving_date')
@@ -128,6 +181,17 @@ class Cattle(models.Model):
         return birth.calving_date if birth else None
 
     def active_pregnancy(self):
+        if hasattr(self, '_prefetched_objects_cache') and 'pregnancies' in self._prefetched_objects_cache:
+            pregs = [p for p in self.pregnancies.all() if p.status == 'PREGNANT']
+            if pregs:
+                # Max by expected_calving_date (nulls last) and then created_at
+                import datetime
+                return sorted(
+                    pregs, 
+                    key=lambda x: (x.expected_calving_date or datetime.date.max, x.created_at), 
+                    reverse=True
+                )[0]
+            return None
         return (
             self.pregnancies.filter(status='PREGNANT')
             .order_by('-expected_calving_date', '-created_at')
@@ -135,6 +199,11 @@ class Cattle(models.Model):
         )
 
     def last_breeding_event(self):
+        if hasattr(self, '_prefetched_objects_cache') and 'breeding_as_dam' in self._prefetched_objects_cache:
+            events = list(self.breeding_as_dam.all())
+            if events:
+                return sorted(events, key=lambda x: x.mating_date, reverse=True)[0]
+            return None
         return self.breeding_as_dam.order_by('-mating_date').first()
 
     def lactation_info(self):
@@ -233,13 +302,18 @@ class Cattle(models.Model):
         # 1) Scheduled husbandry tasks (authoritative upcoming work)
         from husbandry.models import HusbandryTask
 
-        tasks = (
-            self.husbandry_tasks.filter(
-                status=HusbandryTask.Status.PENDING,
-                due_date__gte=self.registered_on,
+        if hasattr(self, '_prefetched_objects_cache') and 'husbandry_tasks' in self._prefetched_objects_cache:
+            all_tasks = [t for t in self.husbandry_tasks.all() if t.status == HusbandryTask.Status.PENDING and t.due_date >= self.registered_on]
+            tasks = sorted(all_tasks, key=lambda x: (x.due_date, x.priority))[:8]
+        else:
+            tasks = (
+                self.husbandry_tasks.filter(
+                    status=HusbandryTask.Status.PENDING,
+                    due_date__gte=self.registered_on,
+                )
+                .order_by('due_date', 'priority')[:8]
             )
-            .order_by('due_date', 'priority')[:8]
-        )
+            
         for task in tasks:
             add(
                 task.task_type,
@@ -348,6 +422,8 @@ class Cattle(models.Model):
                 'name': c.name,
                 'breed': c.breed,
                 'sex': c.sex,
+                'mother_external_id': c.mother_external_id,
+                'father_external_id': c.father_external_id,
             }
 
         mother_node = node(self.mother)

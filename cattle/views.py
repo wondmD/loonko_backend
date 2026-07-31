@@ -35,15 +35,20 @@ class CattleViewSet(FarmScopedQuerySetMixin, viewsets.ModelViewSet):
             herd_filter = self.request.query_params.get('herd_filter')
             qs = apply_category_filter(qs, category)
             qs = apply_herd_filter(qs, herd_filter)
+            
+        if self.action in ('list', 'retrieve'):
+            qs = qs.prefetch_related(
+                'breeding_as_dam',
+                'pregnancies',
+                'pregnancies__birth',
+                'husbandry_tasks',
+            )
 
         if self.action == 'retrieve':
             return qs.prefetch_related(
-                'breeding_as_dam',
-                'pregnancies',
                 'milk_records',
                 'alerts',
                 'vaccinations',
-                'husbandry_tasks',
             )
         return qs
 
