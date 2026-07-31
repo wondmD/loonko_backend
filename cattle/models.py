@@ -118,7 +118,7 @@ class Cattle(models.Model):
         file = getattr(photo_field, 'file', None)
         if not file:
             return
-        if getattr(file, '_committed', True) or getattr(file, '_is_optimizing', False):
+        if getattr(photo_field, '_committed', True) or getattr(file, '_is_optimizing', False):
             return
 
         from io import BytesIO
@@ -140,8 +140,10 @@ class Cattle(models.Model):
             
             file._is_optimizing = True
             photo_field.save(new_name, ContentFile(output.read()), save=False)
-        except Exception:
-            pass
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"Image optimization error: {e}")
 
     @property
     def age_days(self):
