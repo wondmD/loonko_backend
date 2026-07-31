@@ -130,6 +130,15 @@ def apply_herd_filter(queryset, herd_filter: Optional[str]):
             expected_calving__lte=today + timedelta(days=settings.dry_period_days),
         )
 
+    if key == 'milking':
+        # Milking cows are those that have calved and are not currently dry
+        dry_qs = qs.filter(
+            is_pregnant_flag=True,
+            expected_calving__gte=today,
+            expected_calving__lte=today + timedelta(days=settings.dry_period_days),
+        )
+        return qs.filter(has_calved=True).exclude(pk__in=dry_qs.values('pk'))
+
     if key == 'needs_breeding':
         vwp_cut = today - timedelta(days=settings.voluntary_waiting_days)
         first_breed_cut = today - timedelta(days=settings.first_breeding_age_days)
@@ -182,6 +191,7 @@ def herd_facet_counts(base_queryset):
             'close_dry_off': apply_herd_filter(qs, 'close_dry_off').count(),
             'open': apply_herd_filter(qs, 'open').count(),
             'fresh': apply_herd_filter(qs, 'fresh').count(),
+            'milking': apply_herd_filter(qs, 'milking').count(),
             'dry': apply_herd_filter(qs, 'dry').count(),
             'needs_breeding': apply_herd_filter(qs, 'needs_breeding').count(),
             'calving_overdue': apply_herd_filter(qs, 'calving_overdue').count(),

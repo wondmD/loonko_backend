@@ -29,11 +29,15 @@ class BreedingEventSerializer(serializers.ModelSerializer):
         if dam.status != dam.Status.ACTIVE:
             raise serializers.ValidationError('Dam must be an active animal.')
             
-        active_pregnancies = dam.pregnancies.filter(status__in=[Pregnancy.Status.OPEN, Pregnancy.Status.PREGNANT])
+        from husbandry.models import HusbandrySettings
+        settings = HusbandrySettings.load(dam.farm)
+        if dam.age_days is not None and dam.age_days < settings.first_breeding_age_days:
+            raise serializers.ValidationError(f'Cattle is too young for insemination. Minimum age is {settings.first_breeding_age_days} days.')
+            
+        active_pregnancies = dam.pregnancies.filter(status=Pregnancy.Status.PREGNANT)
         if active_pregnancies.exists():
             raise serializers.ValidationError(
-                'Cannot add insemination record. This cattle already has an active or unconfirmed pregnancy. '
-                'Please record the outcome (calved or failed) before adding a new insemination.'
+                'Cannot add insemination record. This cattle already has a confirmed pregnancy.'
             )
         return dam
 
@@ -112,10 +116,10 @@ class BirthRecordSerializer(serializers.ModelSerializer):
         read_only_fields = ('id', 'calf', 'created_at', 'cattle', 'cattle_tag', 'pregnancy_status', 'expected_calving_date')
 
     def validate_pregnancy(self, pregnancy):
-        if pregnancy.status == Pregnancy.Status.CALVED and not self.instance:
+        if pregnancy.status != Pregnancy.Status.PREGNANT:
+            raise serializers.ValidationError('Calving can only be recorded for confirmed pregnancies.')
+        if not self.instance and hasattr(pregnancy, 'birth'):
             raise serializers.ValidationError('This pregnancy already has a calving record.')
-        if pregnancy.status == Pregnancy.Status.FAILED:
-            raise serializers.ValidationError('Cannot record calving for a failed pregnancy.')
         return pregnancy
 
     def validate(self, attrs):
