@@ -79,6 +79,12 @@ class CattleSerializer(serializers.ModelSerializer):
         default=0,
     )
     last_calving_date = serializers.DateField(required=False, allow_null=True, write_only=True)
+    insemination_sire = serializers.PrimaryKeyRelatedField(
+        queryset=Cattle.objects.all(), required=False, allow_null=True, write_only=True
+    )
+    insemination_sire_external_id = serializers.CharField(
+        required=False, allow_blank=True, write_only=True
+    )
 
     class Meta:
         model = Cattle
@@ -111,6 +117,8 @@ class CattleSerializer(serializers.ModelSerializer):
             'husbandry_plan',
             'is_pregnant',
             'insemination_date',
+            'insemination_sire',
+            'insemination_sire_external_id',
             'breeding_method',
             'previous_calvings',
             'last_calving_date',
@@ -200,6 +208,8 @@ class CattleSerializer(serializers.ModelSerializer):
             for key in (
                 'is_pregnant',
                 'insemination_date',
+                'insemination_sire',
+                'insemination_sire_external_id',
                 'breeding_method',
                 'previous_calvings',
                 'last_calving_date',
@@ -212,6 +222,8 @@ class CattleSerializer(serializers.ModelSerializer):
         intake = {
             'is_pregnant': validated_data.pop('is_pregnant', None),
             'insemination_date': validated_data.pop('insemination_date', None),
+            'insemination_sire': validated_data.pop('insemination_sire', None),
+            'insemination_sire_external_id': validated_data.pop('insemination_sire_external_id', None),
             'breeding_method': validated_data.pop('breeding_method', 'AI'),
             'previous_calvings': validated_data.pop('previous_calvings', 0) or 0,
             'last_calving_date': validated_data.pop('last_calving_date', None),

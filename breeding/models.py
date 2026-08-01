@@ -106,9 +106,9 @@ class BirthRecord(models.Model):
         if creating and not self.calf_id and self.calf_tag_id:
             from cattle.models import Cattle
 
-            sire = None
-            sire_external = ''
-            if self.pregnancy.breeding_event_id:
+            sire = getattr(self, '_calf_sire_override', None)
+            sire_external = getattr(self, '_calf_sire_external_override', '')
+            if not sire and not sire_external and self.pregnancy.breeding_event_id:
                 ev = self.pregnancy.breeding_event
                 sire = ev.sire
                 sire_external = ev.sire_external_id

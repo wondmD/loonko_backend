@@ -15,6 +15,8 @@ def apply_reproductive_intake(
     *,
     is_pregnant=None,
     insemination_date=None,
+    insemination_sire=None,
+    insemination_sire_external_id=None,
     breeding_method='AI',
     previous_calvings=0,
     last_calving_date=None,
@@ -122,6 +124,8 @@ def apply_reproductive_intake(
             farm=cattle.farm,
             dam=cattle,
             mating_date=insemination_date,
+            sire=insemination_sire,
+            sire_external_id=insemination_sire_external_id or '',
             method=method,
             notes='Recorded during animal onboarding.',
         )

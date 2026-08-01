@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from cattle.models import Cattle
+
 from .models import BirthRecord, BreedingEvent, Pregnancy
 
 
@@ -44,6 +46,8 @@ class BreedingEventSerializer(serializers.ModelSerializer):
 
 class PregnancySerializer(serializers.ModelSerializer):
     cattle_tag = serializers.CharField(source='cattle.tag_id', read_only=True)
+    sire = serializers.IntegerField(source='breeding_event.sire_id', read_only=True)
+    sire_external_id = serializers.CharField(source='breeding_event.sire_external_id', read_only=True)
 
     class Meta:
         model = Pregnancy
@@ -56,6 +60,8 @@ class PregnancySerializer(serializers.ModelSerializer):
             'expected_calving_date',
             'status',
             'clinical_notes',
+            'sire',
+            'sire_external_id',
             'created_at',
             'updated_at',
         )
@@ -95,6 +101,12 @@ class BirthRecordSerializer(serializers.ModelSerializer):
         source='pregnancy.expected_calving_date',
         read_only=True,
     )
+    calf_sire = serializers.PrimaryKeyRelatedField(
+        queryset=Cattle.objects.all(), required=False, allow_null=True, write_only=True
+    )
+    calf_sire_external_id = serializers.CharField(
+        required=False, allow_blank=True, write_only=True
+    )
 
     class Meta:
         model = BirthRecord
@@ -109,6 +121,8 @@ class BirthRecordSerializer(serializers.ModelSerializer):
             'calf',
             'calf_tag_id',
             'calf_sex',
+            'calf_sire',
+            'calf_sire_external_id',
             'complications',
             'notes',
             'created_at',
@@ -131,3 +145,14 @@ class BirthRecordSerializer(serializers.ModelSerializer):
                     {'calving_date': 'Calving date cannot be before the dam’s date of birth.'}
                 )
         return attrs
+
+    def create(self, validated_data):
+        calf_sire = validated_data.pop('calf_sire', None)
+        calf_sire_external_id = validated_data.pop('calf_sire_external_id', None)
+        record = BirthRecord(**validated_data)
+        if calf_sire:
+            record._calf_sire_override = calf_sire
+        if calf_sire_external_id:
+            record._calf_sire_external_override = calf_sire_external_id
+        record.save()
+        return record
