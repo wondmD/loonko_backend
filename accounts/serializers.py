@@ -4,12 +4,14 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from core.farm_utils import create_farm_for_owner
+from .utils import send_verification_email, send_staff_invitation_email
 
 User = get_user_model()
 
 
 class UserSerializer(serializers.ModelSerializer):
     farm_name = serializers.CharField(source='farm.name', read_only=True, allow_null=True)
+    username = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
         model = User
@@ -24,6 +26,7 @@ class UserSerializer(serializers.ModelSerializer):
             'farm',
             'farm_name',
             'is_active_staff_member',
+            'is_superuser',
             'date_joined',
         )
         read_only_fields = (
@@ -33,6 +36,7 @@ class UserSerializer(serializers.ModelSerializer):
             'farm_name',
             'date_joined',
             'is_active_staff_member',
+            'is_superuser',
         )
 
 
@@ -71,7 +75,15 @@ class RegisterSerializer(serializers.Serializer):
             phone=validated_data.get('phone') or None,
             role=User.Role.OWNER,
             farm=farm,
+            is_active=False,
         )
+        try:
+            send_verification_email(user)
+        except Exception as e:
+            with open("email_error.log", "a") as f:
+                import traceback
+                f.write(traceback.format_exc() + "\n")
+            print(f"Failed to send verification email: {e}")
         return user
 
 
@@ -94,6 +106,7 @@ class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
 
 class StaffSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8, required=False)
+    username = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
         model = User
@@ -141,7 +154,12 @@ class StaffSerializer(serializers.ModelSerializer):
             role=validated_data['role'],
             farm=farm,
             is_active_staff_member=True,
+            is_active=False,
         )
+        try:
+            send_staff_invitation_email(user, inviter=request.user)
+        except Exception as e:
+            print(f"Failed to send staff invitation email: {e}")
         return user
 
     def update(self, instance, validated_data):

@@ -98,6 +98,38 @@ class AuthAndPermissionsTests(APITestCase):
         )
         self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_owner_can_deactivate_staff_without_deleting_it(self):
+        staff = User.objects.create_user(
+            username='staff1',
+            email='staff1@test.local',
+            password='testpass123',
+            role=User.Role.WORKER,
+            farm=self.farm,
+        )
+
+        self._login('owner@test.local')
+        res = self.client.post(f'/api/auth/staff/{staff.id}/deactivate/', format='json')
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK, res.content)
+        staff.refresh_from_db()
+        self.assertFalse(staff.is_active)
+        self.assertFalse(staff.is_active_staff_member)
+
+    def test_owner_can_remove_staff(self):
+        staff = User.objects.create_user(
+            username='staff2',
+            email='staff2@test.local',
+            password='testpass123',
+            role=User.Role.WORKER,
+            farm=self.farm,
+        )
+
+        self._login('owner@test.local')
+        res = self.client.delete(f'/api/auth/staff/{staff.id}/')
+
+        self.assertEqual(res.status_code, status.HTTP_204_NO_CONTENT, res.content)
+        self.assertFalse(User.objects.filter(pk=staff.pk).exists())
+
     def test_farm_singleton(self):
         self._login('owner@test.local')
         res = self.client.post('/api/farm/', {'name': 'Another'}, format='json')

@@ -211,3 +211,15 @@ LOW_MILK_THRESHOLD_RATIO = float(os.getenv('LOW_MILK_THRESHOLD_RATIO', '0.7'))
 MISSED_MILK_ALERT_AFTER_HOUR = int(os.getenv('MISSED_MILK_ALERT_AFTER_HOUR', '14'))
 VACCINATION_DUE_DAYS = int(os.getenv('VACCINATION_DUE_DAYS', '7'))
 CALVING_DUE_DAYS = int(os.getenv('CALVING_DUE_DAYS', '14'))
+
+# Email Configuration
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'mail.ethioace.com')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', 465))
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', 'loonkoo@ethioace.com')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+EMAIL_USE_SSL = str(os.getenv('EMAIL_USE_SSL', 'True')).lower().strip() == 'true'
+EMAIL_USE_TLS = str(os.getenv('EMAIL_USE_TLS', 'False')).lower().strip() == 'true'
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://loonko.vercel.app')
+# Triggering server reload 2
