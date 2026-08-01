@@ -106,12 +106,21 @@ class BirthRecord(models.Model):
         if creating and not self.calf_id and self.calf_tag_id:
             from cattle.models import Cattle
 
+            sire = None
+            sire_external = ''
+            if self.pregnancy.breeding_event_id:
+                ev = self.pregnancy.breeding_event
+                sire = ev.sire
+                sire_external = ev.sire_external_id
+
             calf = Cattle.objects.create(
                 farm_id=self.farm_id,
                 tag_id=self.calf_tag_id,
                 sex=self.calf_sex or Cattle.Sex.FEMALE,
                 date_of_birth=self.calving_date,
                 mother=self.pregnancy.cattle,
+                father=sire,
+                father_external_id=sire_external,
                 status=Cattle.Status.ACTIVE,
             )
             BirthRecord.objects.filter(pk=self.pk).update(calf=calf)

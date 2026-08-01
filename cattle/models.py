@@ -428,8 +428,21 @@ class Cattle(models.Model):
                 'father_external_id': c.father_external_id,
             }
 
-        mother_node = node(self.mother)
-        father_node = node(self.father)
+        def external_node(ext_id, sex):
+            if not ext_id:
+                return None
+            return {
+                'id': None,
+                'tag_id': ext_id,
+                'name': 'External',
+                'breed': '',
+                'sex': sex,
+                'mother_external_id': '',
+                'father_external_id': '',
+            }
+
+        mother_node = node(self.mother) or external_node(self.mother_external_id, self.Sex.FEMALE)
+        father_node = node(self.father) or external_node(self.father_external_id, self.Sex.MALE)
 
         m_grand_dam = node(self.mother.mother) if self.mother else None
         m_grand_sire = node(self.mother.father) if self.mother else None
