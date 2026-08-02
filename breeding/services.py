@@ -172,6 +172,18 @@ def _next_breeding_focus(cattle, state, today=None):
         }
 
     if cattle.date_of_birth:
+        cow_maturity = settings.first_breeding_age_days + settings.gestation_days
+        if cattle.age_days is not None and cattle.age_days >= cow_maturity:
+            return {
+                'type': 'BREEDING',
+                'title': EVENT_TITLE_HINTS['BREEDING'],
+                'detail': 'Mature cow: watch for estrus and schedule breeding / AI',
+                'date': today.isoformat(),
+                'days_until': 0,
+                'is_overdue': False,
+                'priority': 'HIGH',
+                'task_id': None,
+            }
         first = cattle.date_of_birth + timedelta(days=settings.first_breeding_age_days)
         due = max(first, today)
         return {

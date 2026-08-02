@@ -137,13 +137,65 @@ class BirthRecordSerializer(serializers.ModelSerializer):
         return pregnancy
 
     def validate(self, attrs):
+        from django.utils import timezone
+        from husbandry.services import get_settings
+
         pregnancy = attrs.get('pregnancy') or getattr(self.instance, 'pregnancy', None)
-        calving_date = attrs.get('calving_date')
-        if pregnancy and calving_date and pregnancy.cattle.date_of_birth:
-            if calving_date < pregnancy.cattle.date_of_birth:
+        calving_date = attrs.get('calving_date') or getattr(self.instance, 'calving_date', None)
+
+        if not pregnancy or not calving_date:
+            return attrs
+
+        dam = pregnancy.cattle
+        today = timezone.localdate()
+        settings = get_settings(dam.farm)
+
+        if calving_date > today:
+            raise serializers.ValidationError(
+                {'calving_date': 'Calving date cannot be in the future.'}
+            )
+
+        if dam.sex != dam.Sex.FEMALE:
+            raise serializers.ValidationError(
+                {'pregnancy': f'Dam {dam.tag_id} must be female.'}
+            )
+
+        if dam.date_of_birth:
+            if calving_date < dam.date_of_birth:
                 raise serializers.ValidationError(
                     {'calving_date': 'Calving date cannot be before the dam’s date of birth.'}
                 )
+            age_at_calving = (calving_date - dam.date_of_birth).days
+            if age_at_calving < settings.weaning_days:
+                raise serializers.ValidationError(
+                    {
+                        'pregnancy': (
+                            f'Calving cannot be recorded for a calf. Dam {dam.tag_id} is '
+                            f'a calf (only {age_at_calving} days old on {calving_date}).'
+                        )
+                    }
+                )
+
+        # Enforce minimum 9 months (270 days) between calvings for the same dam
+        min_interval_days = 270
+        existing_births = BirthRecord.objects.filter(pregnancy__cattle=dam)
+        if self.instance and self.instance.pk:
+            existing_births = existing_births.exclude(pk=self.instance.pk)
+
+        for prior in existing_births:
+            interval = abs((calving_date - prior.calving_date).days)
+            if interval < min_interval_days:
+                raise serializers.ValidationError(
+                    {
+                        'calving_date': (
+                            f'Cannot register calving on {calving_date}. Dam {dam.tag_id} '
+                            f'has another calving recorded on {prior.calving_date} '
+                            f'({interval} days apart). A minimum interval of 9 months '
+                            f'(270 days) between calvings is required.'
+                        )
+                    }
+                )
+
         return attrs
 
     def create(self, validated_data):

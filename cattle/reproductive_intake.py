@@ -18,15 +18,16 @@ def apply_reproductive_intake(
     insemination_sire=None,
     insemination_sire_external_id=None,
     breeding_method='AI',
-    previous_calvings=0,
+    previous_calvings=None,
     last_calving_date=None,
 ):
     """
     Seed pregnancy / prior calving history for a newly registered female.
 
     - Calves / young heifers below first-breeding age skip intake.
-    - previous_calvings creates historical BirthRecords (no calf animals).
-    - is_pregnant creates a confirmed Pregnancy linked to an AI/mating event.
+    - If non-pregnant and last_calving_date is provided for a mature female,
+      creates a single authentic BirthRecord.
+    - If is_pregnant, creates a confirmed Pregnancy linked to an AI/mating event.
     """
     from breeding.models import BirthRecord, BreedingEvent, Pregnancy
     from husbandry.services import get_settings
@@ -46,15 +47,11 @@ def apply_reproductive_intake(
     age_days = cattle.age_days
     breeding_ready = age_days is None or age_days >= settings.first_breeding_age_days
 
-    previous_calvings = int(previous_calvings or 0)
-    if previous_calvings < 0 or previous_calvings > 20:
-        raise ValidationError({'previous_calvings': 'Enter a number between 0 and 20.'})
-
     # Young animals: ignore empty intake; reject meaningful reproductive claims
-    if not breeding_ready and previous_calvings == 0 and not is_pregnant:
+    if not breeding_ready and not is_pregnant and not last_calving_date:
         return
 
-    if not breeding_ready and (is_pregnant or previous_calvings > 0):
+    if not breeding_ready and (is_pregnant or last_calving_date):
         raise ValidationError(
             {
                 'date_of_birth': (
@@ -70,11 +67,6 @@ def apply_reproductive_intake(
             {'insemination_date': 'Insemination / mating date is required when pregnant.'}
         )
 
-    if previous_calvings > 0 and last_calving_date is None:
-        # Estimate most recent calving ~1 year before today (or before mating if pregnant)
-        anchor = insemination_date or today
-        last_calving_date = anchor - timedelta(days=365)
-
     if last_calving_date and last_calving_date > today:
         raise ValidationError({'last_calving_date': 'Last calving date cannot be in the future.'})
 
@@ -84,38 +76,16 @@ def apply_reproductive_intake(
     if (
         last_calving_date
         and cattle.date_of_birth
-        and last_calving_date < cattle.date_of_birth + timedelta(days=settings.first_breeding_age_days)
+        and last_calving_date < cattle.date_of_birth
     ):
-        # Soft guard — still allow if farmer insists via slightly early estimate
-        pass
+        raise ValidationError({'last_calving_date': 'Last calving date cannot be before date of birth.'})
 
-    # --- Historical calvings (oldest → newest) ---
-    if previous_calvings > 0:
-        dates = []
-        cursor = last_calving_date
-        for _ in range(previous_calvings):
-            dates.append(cursor)
-            cursor = cursor - timedelta(days=365)
-        dates.reverse()
-
-        for index, calving_date in enumerate(dates, start=1):
-            if cattle.date_of_birth and calving_date < cattle.date_of_birth:
-                calving_date = cattle.date_of_birth + timedelta(days=settings.first_breeding_age_days)
-            mating_est = calving_date - timedelta(days=settings.gestation_days)
-            preg = Pregnancy.objects.create(
-                farm=cattle.farm,
-                cattle=cattle,
-                confirmed_on=mating_est + timedelta(days=settings.pregnancy_check_days),
-                expected_calving_date=calving_date,
-                status=Pregnancy.Status.CALVED,
-                clinical_notes='Historical pregnancy from animal onboarding.',
-            )
-            BirthRecord.objects.create(
-                farm=cattle.farm,
-                pregnancy=preg,
-                calving_date=calving_date,
-                notes=f'Historical calving #{index} of {previous_calvings} (onboarding).',
-            )
+    if (
+        last_calving_date
+        and cattle.date_of_birth
+        and (last_calving_date - cattle.date_of_birth).days < settings.weaning_days
+    ):
+        raise ValidationError({'last_calving_date': 'Last calving date cannot be when the animal was a calf.'})
 
     # --- Current pregnancy ---
     if is_pregnant:
@@ -164,3 +134,21 @@ def apply_reproductive_intake(
                     'updated_at',
                 ]
             )
+
+    # --- Single explicit last calving record (for non-pregnant mature cow) ---
+    elif last_calving_date:
+        mating_est = last_calving_date - timedelta(days=settings.gestation_days)
+        preg = Pregnancy.objects.create(
+            farm=cattle.farm,
+            cattle=cattle,
+            confirmed_on=mating_est + timedelta(days=settings.pregnancy_check_days),
+            expected_calving_date=last_calving_date,
+            status=Pregnancy.Status.CALVED,
+            clinical_notes='Historical pregnancy from animal onboarding.',
+        )
+        BirthRecord.objects.create(
+            farm=cattle.farm,
+            pregnancy=preg,
+            calving_date=last_calving_date,
+            notes='Last calving record registered during animal onboarding.',
+        )

@@ -160,10 +160,18 @@ def classify_animal(cattle):
         }
 
     # --- Primary class: calf / heifer / cow ---
+    cow_maturity_days = settings.first_breeding_age_days + settings.gestation_days
     if last_calving is not None:
         category = 'COW'
         category_label = 'Cow'
         basis_parts = [f'Last calved {_iso(last_calving)}']
+    elif age is not None and age >= cow_maturity_days:
+        category = 'COW'
+        category_label = 'Cow'
+        basis_parts = [
+            f'Age {age} days (~{round(age / 365, 1)} yrs, mature cow)',
+            'never calved in system',
+        ]
     elif age is not None and age < settings.weaning_days:
         category = 'CALF'
         category_label = 'Calf'
@@ -208,17 +216,20 @@ def classify_animal(cattle):
         else:
             code, label = 'BREEDING_HEIFER', 'Breeding heifer'
     else:  # COW
-        dim = (today - last_calving).days
         if open_preg:
             code, label = 'BRED_COW', 'Bred cow (awaiting check)'
-        elif dim <= settings.fresh_monitor_days:
-            code, label = 'FRESH', 'Fresh cow'
+        elif last_calving is None:
+            code, label = 'OPEN_COW', 'Mature cow (open)'
         else:
-            milking_end = settings.lactation_target_days - settings.dry_period_days
-            if dim > milking_end:
-                code, label = 'LATE_OPEN', 'Late-lactation open cow'
+            dim = (today - last_calving).days
+            if dim <= settings.fresh_monitor_days:
+                code, label = 'FRESH', 'Fresh cow'
             else:
-                code, label = 'LACTATING', 'Lactating cow'
+                milking_end = settings.lactation_target_days - settings.dry_period_days
+                if dim > milking_end:
+                    code, label = 'LATE_OPEN', 'Late-lactation open cow'
+                else:
+                    code, label = 'LACTATING', 'Lactating cow'
 
     return {
         **base,
@@ -319,6 +330,21 @@ def suggested_windows(cattle):
                     description=(
                         f'After {settings.voluntary_waiting_days}-day VWP; '
                         f'~{settings.estrous_cycle_days}-day heat cycle.'
+                    ),
+                )
+            )
+        elif stage['category'] == 'COW':
+            start = max(today, registered_on)
+            windows.append(
+                win(
+                    key='INSEMINATION',
+                    title='Suggested insemination window',
+                    start=start,
+                    end=start + timedelta(days=settings.heat_watch_days),
+                    ideal=start,
+                    description=(
+                        'Mature open cow: observe heat cycles '
+                        f'(~{settings.estrous_cycle_days} days) and schedule breeding / AI.'
                     ),
                 )
             )

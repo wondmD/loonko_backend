@@ -255,7 +255,11 @@ class Cattle(models.Model):
                 else:
                     stage, label = 'LATE', 'Late lactation'
         elif last_calving is None:
-            stage, label = 'HEIFER', 'Heifer / never calved'
+            age = self.age_days
+            if age is not None and age >= 730:
+                stage, label = 'OPEN_COW', 'Mature cow (open)'
+            else:
+                stage, label = 'HEIFER', 'Heifer / never calved'
             dim = None
         else:
             milking_end = self.LACTATION_TARGET_DAYS - self.DRY_PERIOD_DAYS

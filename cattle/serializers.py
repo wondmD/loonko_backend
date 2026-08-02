@@ -195,14 +195,10 @@ class CattleSerializer(serializers.ModelSerializer):
                 attrs['is_pregnant'] = _parse_bool(attrs.get('is_pregnant'))
 
             is_pregnant = attrs.get('is_pregnant')
-            previous = attrs.get('previous_calvings') or 0
             if is_pregnant and not attrs.get('insemination_date'):
                 raise serializers.ValidationError(
                     {'insemination_date': 'Required when the animal is pregnant.'}
                 )
-            if previous and not attrs.get('last_calving_date') and not is_pregnant:
-                # Optional but recommended — leave to service to estimate
-                pass
         else:
             # Intake fields are create-only
             for key in (
@@ -225,7 +221,7 @@ class CattleSerializer(serializers.ModelSerializer):
             'insemination_sire': validated_data.pop('insemination_sire', None),
             'insemination_sire_external_id': validated_data.pop('insemination_sire_external_id', None),
             'breeding_method': validated_data.pop('breeding_method', 'AI'),
-            'previous_calvings': validated_data.pop('previous_calvings', 0) or 0,
+            'previous_calvings': validated_data.pop('previous_calvings', None),
             'last_calving_date': validated_data.pop('last_calving_date', None),
         }
         cattle = super().create(validated_data)

@@ -65,11 +65,17 @@ def apply_category_filter(queryset, category: Optional[str]):
     settings = _settings_for_queryset(queryset)
     today = timezone.localdate()
     weaning_cutoff = today - timedelta(days=settings.weaning_days)
+    cow_maturity_cutoff = today - timedelta(
+        days=settings.first_breeding_age_days + settings.gestation_days
+    )
 
     qs = annotate_herd_flags(queryset)
 
     if category == 'COW':
-        return qs.filter(has_calved=True)
+        return qs.filter(
+            Q(has_calved=True)
+            | Q(date_of_birth__isnull=False, date_of_birth__lte=cow_maturity_cutoff)
+        )
     if category == 'CALF':
         return qs.filter(
             has_calved=False,
@@ -78,7 +84,11 @@ def apply_category_filter(queryset, category: Optional[str]):
         )
     if category == 'HEIFER':
         return qs.filter(has_calved=False).filter(
-            Q(date_of_birth__isnull=True) | Q(date_of_birth__lte=weaning_cutoff)
+            Q(date_of_birth__isnull=True)
+            | (
+                Q(date_of_birth__lte=weaning_cutoff)
+                & Q(date_of_birth__gt=cow_maturity_cutoff)
+            )
         )
     return queryset
 
@@ -165,17 +175,26 @@ def herd_facet_counts(base_queryset):
     settings = _settings_for_queryset(base_queryset)
     today = timezone.localdate()
     weaning_cutoff = today - timedelta(days=settings.weaning_days)
+    cow_maturity_cutoff = today - timedelta(
+        days=settings.first_breeding_age_days + settings.gestation_days
+    )
     qs = annotate_herd_flags(base_queryset.filter(status='ACTIVE'))
 
-    cow = qs.filter(has_calved=True).count()
+    cow = qs.filter(
+        Q(has_calved=True)
+        | Q(date_of_birth__isnull=False, date_of_birth__lte=cow_maturity_cutoff)
+    ).count()
     calf = qs.filter(
         has_calved=False,
         date_of_birth__isnull=False,
         date_of_birth__gt=weaning_cutoff,
     ).count()
-    heifer = qs.filter(has_calved=False).exclude(
-        date_of_birth__isnull=False,
-        date_of_birth__gt=weaning_cutoff,
+    heifer = qs.filter(has_calved=False).filter(
+        Q(date_of_birth__isnull=True)
+        | (
+            Q(date_of_birth__lte=weaning_cutoff)
+            & Q(date_of_birth__gt=cow_maturity_cutoff)
+        )
     ).count()
 
     return {
