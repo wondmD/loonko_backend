@@ -131,16 +131,19 @@ def _average_daily(records_qs):
 
 def herd_milk_overview(farm):
     """
-    Rows for the milk page table: milking / post-calving females.
-
-    Columns: cattle number, last birth, average production, next dry-off, DIM.
+    Rows for the milk page table: all active female non-calves (cows & heifers)
+    as well as any cattle with milk records.
     """
     from breeding.models import BirthRecord
     from cattle.models import Cattle
+    from husbandry.models import HusbandrySettings
 
     from .models import MilkRecord
 
     today = timezone.localdate()
+    settings = HusbandrySettings.load(farm)
+    weaning_cutoff = today - timedelta(days=settings.weaning_days)
+
     cows = list(
         Cattle.objects.filter(
             farm=farm,
@@ -168,7 +171,16 @@ def herd_milk_overview(farm):
     rows = []
     for cow in cows:
         last_birth = birth_dates.get(cow.id)
-        if last_birth is None and cow.id not in milk_cattle_ids:
+        has_milk_records = cow.id in milk_cattle_ids
+
+        # Skip young uncalved calves without milk records
+        is_calf = (
+            last_birth is None
+            and not has_milk_records
+            and cow.date_of_birth is not None
+            and cow.date_of_birth > weaning_cutoff
+        )
+        if is_calf:
             continue
 
         lactation = cow.lactation_info()

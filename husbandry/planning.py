@@ -129,6 +129,7 @@ def classify_animal(cattle):
 
     base = {
         'age_days': age,
+        'age_display': cattle.age_display,
         'age_months': round(age / 30.4, 1) if age is not None else None,
         'last_calving_date': _iso(last_calving),
         'last_insemination_date': _iso(last_ai),
@@ -168,22 +169,25 @@ def classify_animal(cattle):
     elif age is not None and age >= cow_maturity_days:
         category = 'COW'
         category_label = 'Cow'
+        age_str = cattle.age_display or f"{age} days old"
         basis_parts = [
-            f'Age {age} days (~{round(age / 365, 1)} yrs, mature cow)',
+            f'Age {age_str} (mature cow)',
             'never calved in system',
         ]
     elif age is not None and age < settings.weaning_days:
         category = 'CALF'
         category_label = 'Calf'
+        age_str = cattle.age_display or f"{age} days old"
         basis_parts = [
-            f'Age {age} days (< {settings.weaning_days}-day weaning threshold)',
+            f'Age {age_str} (< {settings.weaning_days}-day weaning threshold)',
             'never calved',
         ]
     else:
         category = 'HEIFER'
         category_label = 'Heifer'
         if age is not None:
-            basis_parts = [f'Age {age} days', 'never calved']
+            age_str = cattle.age_display or f"{age} days old"
+            basis_parts = [f'Age {age_str}', 'never calved']
         else:
             basis_parts = ['Never calved (no DOB — treated as heifer)']
 

@@ -61,6 +61,8 @@ class CattleSerializer(serializers.ModelSerializer):
     lactation = serializers.SerializerMethodField()
     next_event = serializers.SerializerMethodField()
     husbandry_plan = serializers.SerializerMethodField()
+    age_days = serializers.ReadOnlyField()
+    age_display = serializers.ReadOnlyField()
 
     # Write-only reproductive onboarding (create only)
     is_pregnant = serializers.CharField(required=False, allow_blank=True, write_only=True)
@@ -95,6 +97,8 @@ class CattleSerializer(serializers.ModelSerializer):
             'breed',
             'sex',
             'date_of_birth',
+            'age_days',
+            'age_display',
             'status',
             'sale_price',
             'sale_date',
@@ -129,6 +133,8 @@ class CattleSerializer(serializers.ModelSerializer):
             'id',
             'created_at',
             'updated_at',
+            'age_days',
+            'age_display',
             'photo_front_url',
             'photo_left_url',
             'photo_right_url',
@@ -312,7 +318,6 @@ class CattleWorkerUpdateSerializer(serializers.ModelSerializer):
 
 
 class CattleDetailSerializer(CattleSerializer):
-    age_days = serializers.SerializerMethodField()
     upcoming_events = serializers.SerializerMethodField()
     milk_summary = serializers.SerializerMethodField()
     breeding_history = serializers.SerializerMethodField()
@@ -328,7 +333,6 @@ class CattleDetailSerializer(CattleSerializer):
 
     class Meta(CattleSerializer.Meta):
         fields = CattleSerializer.Meta.fields + (
-            'age_days',
             'upcoming_events',
             'milk_summary',
             'breeding_history',
@@ -344,9 +348,6 @@ class CattleDetailSerializer(CattleSerializer):
 
     def get_husbandry_plan(self, obj):
         return suggested_windows(obj)
-
-    def get_age_days(self, obj):
-        return obj.age_days
 
     def get_upcoming_events(self, obj):
         return obj.upcoming_events()

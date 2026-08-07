@@ -152,6 +152,40 @@ class Cattle(models.Model):
         return (timezone.localdate() - self.date_of_birth).days
 
     @property
+    def age_display(self):
+        if not self.date_of_birth:
+            return None
+        today = timezone.localdate()
+        dob = self.date_of_birth
+        if dob > today:
+            return "Born today"
+
+        years = today.year - dob.year
+        months = today.month - dob.month
+        days = today.day - dob.day
+        if days < 0:
+            months -= 1
+        if months < 0:
+            years -= 1
+            months += 12
+
+        if years >= 1:
+            yr_str = "1 year" if years == 1 else f"{years} years"
+            if months > 0:
+                mo_str = "1 month" if months == 1 else f"{months} months"
+                return f"{yr_str} and {mo_str} old"
+            return f"{yr_str} old"
+        if months >= 1:
+            mo_str = "1 month" if months == 1 else f"{months} months"
+            return f"{mo_str} old"
+        total_days = (today - dob).days
+        if total_days > 1:
+            return f"{total_days} days old"
+        if total_days == 1:
+            return "1 day old"
+        return "Born today"
+
+    @property
     def registered_on(self):
         """Calendar date the animal entered Loonkoo — ignore pre-registration misses."""
         if self.created_at:

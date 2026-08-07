@@ -18,6 +18,7 @@ class CattleEnhancementTests(APITestCase):
         self.farm = Farm.objects.create(name='Test Farm')
         self.owner = User.objects.create_user(
             username='owner',
+            email='owner@test.com',
             password='testpass123',
             role=User.Role.OWNER,
             farm=self.farm
@@ -97,3 +98,71 @@ class CattleEnhancementTests(APITestCase):
         self.assertEqual(data['risk_level'], 'MODERATE_WARNING')
         self.assertTrue(data['has_conflict'])
         self.assertEqual(data['common_ancestors'][0]['id'], sire.id)
+
+    def test_age_display_formatting(self):
+        today = timezone.localdate()
+        
+        # 1 year and 2 months
+        c1 = Cattle.objects.create(
+            farm=self.farm,
+            tag_id='AGE-1',
+            sex=Cattle.Sex.FEMALE,
+            date_of_birth=today.replace(year=today.year - 1, month=(today.month - 2 if today.month > 2 else 12)),
+        )
+        self.assertIn('year', c1.age_display)
+        
+        # 8 months
+        c2 = Cattle.objects.create(
+            farm=self.farm,
+            tag_id='AGE-2',
+            sex=Cattle.Sex.FEMALE,
+            date_of_birth=today - timedelta(days=240),
+        )
+        self.assertIn('month', c2.age_display)
+        
+        # 15 days
+        c3 = Cattle.objects.create(
+            farm=self.farm,
+            tag_id='AGE-3',
+            sex=Cattle.Sex.FEMALE,
+            date_of_birth=today - timedelta(days=15),
+        )
+        self.assertEqual(c3.age_display, '15 days old')
+
+        # Born today
+        c4 = Cattle.objects.create(
+            farm=self.farm,
+            tag_id='AGE-4',
+            sex=Cattle.Sex.FEMALE,
+            date_of_birth=today,
+        )
+        self.assertEqual(c4.age_display, 'Born today')
+
+    def test_cattle_deletion(self):
+        # Create a calf linked to cow as mother
+        calf = Cattle.objects.create(
+            farm=self.farm,
+            tag_id='CALF-100',
+            sex=Cattle.Sex.FEMALE,
+            mother=self.cow,
+        )
+        
+        # Non-owner cannot delete
+        worker = User.objects.create_user(
+            username='worker', email='worker@test.com', password='password', role=User.Role.WORKER, farm=self.farm
+        )
+        self.client.force_authenticate(user=worker)
+        res = self.client.delete(f'/api/cattle/{self.cow.id}/')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        
+        # Owner can delete
+        self.client.force_authenticate(user=self.owner)
+        res = self.client.delete(f'/api/cattle/{self.cow.id}/')
+        self.assertEqual(res.status_code, status.HTTP_204_NO_CONTENT)
+        
+        # Verify cow is deleted
+        self.assertFalse(Cattle.objects.filter(id=self.cow.id).exists())
+        
+        # Verify calf still exists and mother is set to null
+        calf.refresh_from_db()
+        self.assertIsNone(calf.mother)
