@@ -138,6 +138,34 @@ class CattleEnhancementTests(APITestCase):
         )
         self.assertEqual(c4.age_display, 'Born today')
 
+    def test_list_respects_page_size_and_choices_returns_full_herd(self):
+        for i in range(25):
+            Cattle.objects.create(
+                farm=self.farm,
+                tag_id=f'TAG-{i:03d}',
+                sex=Cattle.Sex.FEMALE,
+                status=Cattle.Status.ACTIVE,
+            )
+
+        default = self.client.get('/api/cattle/')
+        self.assertEqual(default.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(default.json()['results']), 20)
+
+        paged = self.client.get('/api/cattle/?page_size=1000')
+        self.assertEqual(paged.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(len(paged.json()['results']), 26)
+
+        limited = self.client.get('/api/cattle/?limit=1000')
+        self.assertEqual(limited.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(len(limited.json()['results']), 26)
+
+        choices = self.client.get('/api/cattle/choices/?status=ACTIVE')
+        self.assertEqual(choices.status_code, status.HTTP_200_OK)
+        body = choices.json()
+        self.assertGreaterEqual(body['count'], 26)
+        self.assertGreaterEqual(len(body['results']), 26)
+        self.assertTrue(all('tag_id' in row and 'id' in row for row in body['results']))
+
     def test_cattle_deletion(self):
         # Create a calf linked to cow as mother
         calf = Cattle.objects.create(

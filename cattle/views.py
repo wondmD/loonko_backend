@@ -5,6 +5,7 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
 from core.farm_utils import require_user_farm
+from core.pagination import StandardResultsSetPagination
 from core.permissions import IsAppUser
 from core.scoping import FarmScopedQuerySetMixin
 from .herd_filters import apply_category_filter, apply_herd_filter, herd_facet_counts
@@ -15,10 +16,13 @@ from .serializers import (
     CattleWorkerUpdateSerializer,
 )
 
+CATTLE_CHOICES_MAX = 5000
+
 
 class CattleViewSet(FarmScopedQuerySetMixin, viewsets.ModelViewSet):
     queryset = Cattle.objects.select_related('mother', 'father').all()
     permission_classes = [IsAppUser]
+    pagination_class = StandardResultsSetPagination
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     filterset_fields = ['status', 'sex', 'breed']
     search_fields = ['tag_id', 'name', 'breed']
@@ -30,7 +34,7 @@ class CattleViewSet(FarmScopedQuerySetMixin, viewsets.ModelViewSet):
         if sex and sex.upper() not in ('', 'ALL'):
             qs = qs.filter(sex=sex.upper())
 
-        if self.action == 'list':
+        if self.action in ('list', 'choices'):
             category = self.request.query_params.get('category')
             herd_filter = self.request.query_params.get('herd_filter')
             qs = apply_category_filter(qs, category)
@@ -62,6 +66,25 @@ class CattleViewSet(FarmScopedQuerySetMixin, viewsets.ModelViewSet):
         if self.action in ('partial_update', 'update') and user.role == 'WORKER':
             return CattleWorkerUpdateSerializer
         return CattleSerializer
+
+    @action(detail=False, methods=['get'])
+    def choices(self, request):
+        """Lightweight, unpaginated herd list for record-form pickers."""
+        qs = self.filter_queryset(self.get_queryset()).order_by('tag_id')
+        rows = [
+            {
+                'id': cattle.id,
+                'tag_id': cattle.tag_id,
+                'name': cattle.name,
+                'sex': cattle.sex,
+                'status': cattle.status,
+                'date_of_birth': cattle.date_of_birth.isoformat()
+                if cattle.date_of_birth
+                else None,
+            }
+            for cattle in qs[:CATTLE_CHOICES_MAX]
+        ]
+        return Response({'count': len(rows), 'results': rows})
 
     @action(detail=False, methods=['get'])
     def facets(self, request):
